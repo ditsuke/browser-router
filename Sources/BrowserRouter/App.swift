@@ -104,12 +104,18 @@ struct SettingsView: View {
                                 Picker("Match", selection: $rule.kind) {
                                     ForEach(MatchKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                                 }.labelsHidden().frame(width: 180)
-                                TextField(rule.kind == .glob ? "https://*.example.com/work/*" : "example.com", text: $rule.pattern)
+                                TextField(patternPlaceholder(for: rule.kind), text: $rule.pattern)
                                 Button { move(rule.id, by: -1) } label: { Image(systemName: "arrow.up") }.help("Move earlier")
                                 Button { move(rule.id, by: 1) } label: { Image(systemName: "arrow.down") }.help("Move later")
                                 Button(role: .destructive) { store.config.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
                             }
                             DestinationPicker(store: store, selection: $rule.destination)
+                            if let error = rule.validationError {
+                                Text(error).font(.caption).foregroundStyle(.red)
+                            } else if rule.kind == .regex {
+                                Text("Searches the URL. Use ^ and $ to anchor; (?i) for case-insensitive matching.")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
                     }
                     if store.config.rules.isEmpty {
@@ -142,6 +148,14 @@ struct SettingsView: View {
         guard let index = store.config.rules.firstIndex(where: { $0.id == id }),
               store.config.rules.indices.contains(index + offset) else { return }
         store.config.rules.swapAt(index, index + offset)
+    }
+
+    private func patternPlaceholder(for kind: MatchKind) -> String {
+        switch kind {
+        case .domain, .domainAndSubdomains: "example.com"
+        case .glob: "https://*.example.com/work/*"
+        case .regex: #"^https://([a-z0-9-]+\.)?example\.com/work/"#
+        }
     }
 }
 

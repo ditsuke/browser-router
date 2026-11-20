@@ -13,6 +13,7 @@ public enum MatchKind: String, Codable, CaseIterable, Sendable {
     case domain = "Domain"
     case domainAndSubdomains = "Domain + subdomains"
     case glob = "URL glob"
+    case regex = "URL regex"
 }
 
 public struct Rule: Codable, Identifiable, Equatable, Sendable {
@@ -26,6 +27,18 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
                 pattern: String = "", destination: Destination) {
         self.id = id; self.enabled = enabled; self.kind = kind
         self.pattern = pattern; self.destination = destination
+    }
+
+    public var validationError: String? {
+        guard kind == .regex else { return nil }
+        let value = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return "Enter a regular expression. Empty rules are skipped." }
+        do {
+            _ = try NSRegularExpression(pattern: value)
+            return nil
+        } catch {
+            return "Invalid regular expression. This rule is skipped."
+        }
     }
 
     public func matches(_ url: URL) -> Bool {
@@ -42,6 +55,10 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
             let regex = "\\A" + value.components(separatedBy: "*")
                 .map(NSRegularExpression.escapedPattern(for:)).joined(separator: ".*") + "\\z"
             return url.absoluteString.range(of: regex, options: .regularExpression) != nil
+        case .regex:
+            guard let regex = try? NSRegularExpression(pattern: value) else { return false }
+            let string = url.absoluteString
+            return regex.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) != nil
         }
     }
 }

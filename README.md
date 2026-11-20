@@ -20,6 +20,7 @@ The menu bar branch icon opens settings. Closing the settings window leaves rout
 - **Domain** matches only `example.com`.
 - **Domain + subdomains** matches `example.com` and `work.example.com`, never `notexample.com`.
 - **URL glob** matches the whole URL. `*` means any sequence of characters; everything else is literal and case sensitive. Matching uses the URL’s percent-encoded representation. Example: `https://github.com/my-org/*`.
+- **URL regex** searches the percent-encoded URL with Foundation regular expressions. Use `^` and `$` to anchor the match, or `(?i)` for case-insensitive matching. Example: `^https://(www\.)?example\.com/(work|admin)(/|$)`. Enter the expression directly without `/…/` delimiters. Invalid and empty expressions show an inline error and are skipped.
 - Use the test field to preview the destination or open the link explicitly.
 
 Only HTTP(S) links are handled. Browsers are opened explicitly, preventing default-browser recursion. Missing destinations produce a visible error rather than silently opening another profile. Links opened inside a browser generally stay there; Browser Router handles links sent to the system default browser.

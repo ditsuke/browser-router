@@ -23,6 +23,27 @@ func globIsAnchoredAndLiteral() {
     precondition(!rule.matches(URL(string: "https://evil.test/https://example.com/work/a?q=(x)")!))
 }
 
+func regularExpressions() throws {
+    let rule = Rule(kind: .regex, pattern: #"^https://(www\.)?example\.com/(work|admin)(/|$)"#, destination: work)
+    precondition(rule.validationError == nil)
+    precondition(rule.matches(URL(string: "https://example.com/work/123")!))
+    precondition(rule.matches(URL(string: "https://www.example.com/admin")!))
+    precondition(!rule.matches(URL(string: "https://example.com/workshop")!))
+    precondition(!rule.matches(URL(string: "https://evil.test/https://example.com/work/")!))
+    let search = Rule(kind: .regex, pattern: "(?i)/WORK/", destination: work)
+    precondition(search.matches(URL(string: "https://example.com/work/123")!))
+    let invalid = Rule(kind: .regex, pattern: "[", destination: work)
+    precondition(invalid.validationError != nil)
+    precondition(!invalid.matches(URL(string: "https://example.com")!))
+    let empty = Rule(kind: .regex, pattern: "  ", destination: work)
+    precondition(empty.validationError != nil)
+    precondition(!empty.matches(URL(string: "https://example.com")!))
+    let config = Configuration(fallback: safari, rules: [invalid, rule])
+    precondition(config.destination(for: URL(string: "https://example.com/work/123")!) == work)
+    let decoded = try JSONDecoder().decode(Configuration.self, from: JSONEncoder().encode(config))
+    precondition(decoded == config)
+}
+
 func precedenceDisabledAndFallback() throws {
     let url = URL(string: "https://example.com")!
     var config = Configuration(fallback: safari, rules: [
@@ -58,6 +79,7 @@ func profileDiscovery() throws {
 
 domainBoundaries()
 globIsAnchoredAndLiteral()
+try regularExpressions()
 try precedenceDisabledAndFallback()
 try profileDiscovery()
 print("All routing and profile checks passed.")
