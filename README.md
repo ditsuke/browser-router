@@ -11,6 +11,27 @@ open "dist/Browser Router.app"
 
 For permanent use, copy the app to `/Applications` before opening it and choosing **Make default browser**. macOS may ask you to confirm the change. You can also select Browser Router in System Settings → Desktop & Dock → Default web browser.
 
+## Nix
+
+The flake provides a package and development shell for Apple Silicon Macs. Its lock file reuses the Swift 6-capable Nixpkgs revision already pinned as a secondary input in the author's dotfiles; it has no dependency on that local checkout. This Nixpkgs revision no longer supports Intel Macs; the local Swift build remains available there.
+
+```sh
+nix build
+open "result/Applications/Browser Router.app"
+# Or build and launch in one step:
+nix run
+
+# Build the app and run its routing/configuration checks:
+nix flake check
+
+# Enter the pinned Swift development environment:
+nix develop
+```
+
+The default package is also available as `.#browser-router`. It installs the app under `Applications/Browser Router.app` and a `browser-router` launcher under `bin`. `nix profile add .` keeps the package installed and makes the launcher available. Nix-built apps depend on their Nix store closure; use the profile or your Nix configuration to retain it instead of copying the bundle out as a standalone distribution.
+
+To include it in another flake, add this repository as an input and use `inputs.browser-router.packages.${system}.default`. For example, put that package in nix-darwin's `environment.systemPackages`. No system or default-browser settings are changed by building or installing it.
+
 The menu bar branch icon opens settings. Closing the settings window leaves routing active. macOS launches the app when a web link is opened, so a login item is unnecessary. Quitting does not change the system's default browser; choose another browser in System Settings to stop using the router.
 
 ## Routing
