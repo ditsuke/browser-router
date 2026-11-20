@@ -15,6 +15,14 @@ The menu bar branch icon opens settings. Closing the settings window leaves rout
 
 ## Routing
 
+### Routing profiles
+
+Create profiles such as **Personal** and **Work**, each with its own default destination and ordered overrides. Choose a profile card in the router window, press **⌘1–⌘9** for the first nine profiles, or switch from the menu bar menu. Switching takes effect immediately for future links and the active profile is remembered across restarts. Shortcuts apply while the router window is focused; they are not global hotkeys.
+
+Use **Manage** to create, duplicate, rename, or delete a profile. New profiles start with Safari and no overrides; duplicates copy the current profile’s destinations and rules. Deleting requires confirmation, and the last profile cannot be deleted. These routing profiles are separate from browser profiles such as Chromium’s Work profile, which remain available as destinations within any routing profile.
+
+Existing settings become a **Personal** profile automatically. Before the app saves the new format, it preserves the original file as `config.before-profiles.json` next to `config.json`.
+
 - Choose a default destination, including a profile where supported.
 - Add overrides and reorder them with the arrows. The first enabled match wins.
 - **Domain** matches only `example.com`.

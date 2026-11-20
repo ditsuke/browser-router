@@ -14,7 +14,11 @@ struct Browser: Identifiable {
 final class BrowserStore: ObservableObject {
     static let routerID = "com.ditsuke.BrowserRouter"
     @Published var browsers: [Browser] = []
-    @Published var config = Configuration() { didSet { if loaded { save() } } }
+    @Published var settings = RoutingSettings() { didSet { if loaded { save() } } }
+    var config: Configuration {
+        get { settings.activeConfiguration }
+        set { settings.activeConfiguration = newValue }
+    }
     @Published var error: String?
     @Published var isDefault = false
     private var loaded = false
@@ -24,7 +28,14 @@ final class BrowserStore: ObservableObject {
     init() {
         do {
             if FileManager.default.fileExists(atPath: configURL.path) {
-                config = try JSONDecoder().decode(Configuration.self, from: Data(contentsOf: configURL))
+                let data = try Data(contentsOf: configURL)
+                settings = try JSONDecoder().decode(RoutingSettings.self, from: data)
+                if (try? JSONDecoder().decode(Configuration.self, from: data)) != nil {
+                    let backup = configURL.deletingLastPathComponent().appendingPathComponent("config.before-profiles.json")
+                    if !FileManager.default.fileExists(atPath: backup.path) {
+                        try data.write(to: backup, options: .atomic)
+                    }
+                }
             }
             loaded = true
         } catch {
@@ -60,7 +71,7 @@ final class BrowserStore: ObservableObject {
             try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(config).write(to: configURL, options: .atomic)
+            try encoder.encode(settings).write(to: configURL, options: .atomic)
         } catch { self.error = "Could not save settings: \(error.localizedDescription)" }
     }
 

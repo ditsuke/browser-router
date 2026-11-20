@@ -77,9 +77,52 @@ func profileDiscovery() throws {
     precondition(ChromiumProfiles.read(at: root).isEmpty)
 }
 
+func routingProfiles() throws {
+    let url = URL(string: "https://example.com/work")!
+    let legacy = Configuration(fallback: safari, rules: [Rule(pattern: "example.com", destination: work)])
+    let data = try JSONEncoder().encode(legacy)
+    var settings = try JSONDecoder().decode(RoutingSettings.self, from: data)
+    let personalID = settings.activeProfileID
+    precondition(settings.profiles.count == 1)
+    precondition(settings.activeConfiguration == legacy)
+    settings.add(name: "Work")
+    let workID = settings.activeProfileID
+    precondition(settings.activeConfiguration.rules.isEmpty)
+    settings.activeConfiguration = Configuration(fallback: work)
+    precondition(settings.activeConfiguration.destination(for: url) == work)
+    settings.activate(personalID)
+    precondition(settings.activeConfiguration == legacy)
+    settings.add(name: "Personal copy", duplicatingActive: true)
+    precondition(settings.activeConfiguration == legacy)
+    settings.activeConfiguration.rules.removeAll()
+    settings.renameActive(to: "Copy")
+    precondition(settings.activeProfile.name == "Copy")
+    settings.activate(personalID)
+    precondition(settings.activeConfiguration.rules.count == 1)
+    settings.activate(workID)
+    let encoded = try JSONEncoder().encode(settings)
+    let decoded = try JSONDecoder().decode(RoutingSettings.self, from: encoded)
+    precondition(decoded == settings)
+    precondition(decoded.activeProfileID == workID)
+    settings.activate(UUID())
+    precondition(settings.activeProfileID == workID)
+    settings.deleteActive()
+    precondition(settings.activeProfileID == personalID)
+    settings.deleteActive()
+    settings.deleteActive()
+    precondition(settings.profiles.count == 1)
+    for json in [#"{"profiles":[],"activeProfileID":"00000000-0000-0000-0000-000000000000"}"#, "{}"] {
+        do {
+            _ = try JSONDecoder().decode(RoutingSettings.self, from: Data(json.utf8))
+            preconditionFailure("Invalid configuration must be rejected")
+        } catch is DecodingError { }
+    }
+}
+
 domainBoundaries()
 globIsAnchoredAndLiteral()
 try regularExpressions()
 try precedenceDisabledAndFallback()
 try profileDiscovery()
+try routingProfiles()
 print("All routing and profile checks passed.")

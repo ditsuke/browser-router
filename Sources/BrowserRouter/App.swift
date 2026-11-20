@@ -3,23 +3,54 @@ import SwiftUI
 import RouterCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let store = BrowserStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private var receivedURL = false
+    private var shortcutMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Browser Router")
         let menu = NSMenu()
-        menu.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.delegate = self
         item.menu = menu
         statusItem = item
+        shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated {
+                guard let self, let window = self.window, NSApp.keyWindow === window,
+                      window.attachedSheet == nil,
+                      event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+                      let key = event.charactersIgnoringModifiers, let number = Int(key),
+                      (1...9).contains(number), self.store.settings.profiles.indices.contains(number - 1) else { return false }
+                self.store.settings.activate(self.store.settings.profiles[number - 1].id)
+                return true
+            }
+            return handled ? nil : event
+        }
         if !receivedURL { showSettings() }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(withTitle: "Routing profile", action: nil, keyEquivalent: "")
+        for (index, profile) in store.settings.profiles.enumerated() {
+            let item = menu.addItem(withTitle: profile.name, action: #selector(selectProfile(_:)),
+                                    keyEquivalent: index < 9 ? String(index + 1) : "")
+            item.target = self
+            item.representedObject = profile.id.uuidString
+            item.state = profile.id == store.settings.activeProfileID ? .on : .off
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String, let id = UUID(uuidString: value) else { return }
+        store.settings.activate(id)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -36,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 600),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 720),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Browser Router"
             window.contentView = NSHostingView(rootView: SettingsView(store: store))
@@ -84,6 +115,7 @@ struct SettingsView: View {
                 Button(store.isDefault ? "Default browser ✓" : "Make default browser") { store.makeDefault() }
                     .disabled(store.isDefault)
             }
+            ProfileSwitcher(store: store)
             GroupBox("Default destination") {
                 DestinationPicker(store: store, selection: $store.config.fallback).padding(8)
             }
@@ -123,7 +155,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary).padding(25)
                     }
                 }
-            }
+            }.id(store.settings.activeProfileID)
             Divider()
             HStack {
                 TextField("Test an HTTP(S) URL", text: $testURL)
@@ -141,7 +173,7 @@ struct SettingsView: View {
                     Button("Dismiss") { store.error = nil }
                 }
             }
-        }.padding(22).frame(minWidth: 720, minHeight: 540)
+        }.padding(22).frame(minWidth: 720, minHeight: 650)
     }
 
     private func move(_ id: UUID, by offset: Int) {
