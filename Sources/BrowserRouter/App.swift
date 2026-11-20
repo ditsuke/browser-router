@@ -3,12 +3,13 @@ import SwiftUI
 import RouterCore
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     let store = BrowserStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private var receivedURL = false
     private var shortcutMonitor: Any?
+    private var pendingNeutralFocus = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -20,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = item
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated {
-                guard let self, let window = self.window, NSApp.keyWindow === window,
+                guard let self, let window = self.window, NSApp.isActive, window.isVisible, NSApp.keyWindow != nil,
                       window.attachedSheet == nil,
                       let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
                 let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
@@ -103,17 +104,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 720),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Browser Router"
-            window.contentView = NSHostingView(rootView: SettingsView(store: store))
+            let hostingView = NSHostingView(rootView: SettingsView(store: store, restoreWindowFocus: { [weak self] in
+                self?.restoreNeutralFocus()
+            }))
+            let container = WindowFocusContainer(content: hostingView)
+            window.contentView = container
+            window.initialFirstResponder = container
+            window.delegate = self
             window.isReleasedWhenClosed = false
             window.center()
             self.window = window
         }
+        pendingNeutralFocus = true
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async { [weak self] in
-            guard let window = self?.window, window.attachedSheet == nil else { return }
-            window.makeFirstResponder(nil)
-        }
+        restoreNeutralFocus()
+    }
+
+    private func restoreNeutralFocus() {
+        guard let window else { return }
+        pendingNeutralFocus = true
+        guard window.isKeyWindow, window.attachedSheet == nil else { return }
+        pendingNeutralFocus = !window.makeFirstResponder(window.contentView)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        if pendingNeutralFocus { restoreNeutralFocus() }
     }
 }
 
@@ -139,8 +155,7 @@ struct DestinationPicker: View {
 
 struct SettingsView: View {
     @ObservedObject var store: BrowserStore
-    @State private var testURL = "https://example.com"
-    @FocusState private var urlFocused: Bool
+    let restoreWindowFocus: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -161,7 +176,10 @@ struct SettingsView: View {
             }
             ProfileSwitcher(store: store)
             GroupBox("Default destination") {
-                DestinationPicker(store: store, selection: $store.config.fallback).padding(8)
+                HStack(spacing: 12) {
+                    DestinationPicker(store: store, selection: $store.config.fallback)
+                    TestURLControl(store: store, restoreWindowFocus: restoreWindowFocus)
+                }.padding(8)
             }
             OverridesHeader(isExpanded: $store.overridesExpanded,
                             count: store.config.rules.count,
@@ -205,18 +223,6 @@ struct SettingsView: View {
                 }.id(store.settings.activeProfileID)
             }
             if !store.overridesExpanded { Spacer(minLength: 0) }
-            Divider()
-            HStack {
-                TextField("Test an HTTP(S) URL", text: $testURL)
-                    .focused($urlFocused)
-                    .onSubmit { openTestURL() }
-                    .help("Test URL (⌘L); press Return to open")
-                Button("Open") { openTestURL() }
-                    .help("Open test URL (Return when the URL field is focused)")
-            }
-            if let url = URL(string: testURL), ["http", "https"].contains(url.scheme) {
-                Text("Routes to: \(store.label(for: store.config.destination(for: url)))").font(.caption).foregroundStyle(.secondary)
-            }
             Text("Changes save automatically. Profiles: Chrome, Brave, Edge, Chromium and Vivaldi. Other browsers use their current profile. URL globs use *; all other characters are literal.")
                 .font(.caption).foregroundStyle(.secondary)
             if let error = store.error {
@@ -233,10 +239,8 @@ struct SettingsView: View {
                 switch action {
                 case .toggleOverrides: store.overridesExpanded.toggle()
                 case .addOverride: addOverride()
-                case .focusURL: urlFocused = true
                 case .refresh: store.refresh()
-                case .openTestURL: openTestURL()
-                case .newProfile, .duplicateProfile, .renameProfile, .deleteProfile: break
+                case .newProfile, .duplicateProfile, .renameProfile, .deleteProfile, .focusURL, .openTestURL: break
                 }
             }
     }
@@ -244,14 +248,6 @@ struct SettingsView: View {
     private func addOverride() {
         store.overridesExpanded = true
         store.config.rules.append(Rule(destination: store.config.fallback))
-    }
-
-    private func openTestURL() {
-        guard let url = URL(string: testURL) else {
-            store.error = "Enter a valid HTTP(S) URL."
-            return
-        }
-        store.route(url)
     }
 
     private func move(_ id: UUID, by offset: Int) {

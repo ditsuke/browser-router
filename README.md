@@ -21,8 +21,6 @@ Create profiles such as **Personal** and **Work**, each with its own default des
 
 Use **Manage** to create, duplicate, rename, or delete a profile. New profiles start with Safari and no overrides; duplicates copy the current profile’s destinations and rules. Deleting requires confirmation, and the last profile cannot be deleted. These routing profiles are separate from browser profiles such as Chromium’s Work profile, which remain available as destinations within any routing profile.
 
-Existing settings become a **Personal** profile automatically. Before the app saves the new format, it preserves the original file as `config.before-profiles.json` next to `config.json`.
-
 ### Keyboard shortcuts
 
 These work while the router window is focused. Profile dialogs keep their normal Return/Escape behavior.
@@ -35,7 +33,7 @@ The **Shortcuts** menu in the router window lists commands with native shortcut 
 | ⌘D | Duplicate the active routing profile |
 | ⌘O | Expand or collapse overrides |
 | ⇧⌘N | Add an override and expand the section |
-| ⌘L | Focus the test URL field |
+| ⌘L | Open the URL tester popover and focus its field |
 | Return in the test URL field | Open the test URL |
 | ⌘R | Refresh browsers and browser profiles |
 
@@ -47,7 +45,7 @@ The **Shortcuts** menu in the router window lists commands with native shortcut 
 - **Domain + subdomains** matches `example.com` and `work.example.com`, never `notexample.com`.
 - **URL glob** matches the whole URL. `*` means any sequence of characters; everything else is literal and case sensitive. Matching uses the URL’s percent-encoded representation. Example: `https://github.com/my-org/*`.
 - **URL regex** searches the percent-encoded URL with Foundation regular expressions. Use `^` and `$` to anchor the match, or `(?i)` for case-insensitive matching. Example: `^https://(www\.)?example\.com/(work|admin)(/|$)`. Enter the expression directly without `/…/` delimiters. Invalid and empty expressions show an inline error and are skipped.
-- Use the test field to preview the destination or open the link explicitly.
+- Use **Test URL** beside the default destination (⌘L) to open the tester popover. It previews the destination and matched override, or explains that the default applies. Return opens the link; Escape closes the popover.
 
 Only HTTP(S) links are handled. Browsers are opened explicitly, preventing default-browser recursion. Missing destinations produce a visible error rather than silently opening another profile. Links opened inside a browser generally stay there; Browser Router handles links sent to the system default browser.
 
@@ -57,7 +55,7 @@ Installed HTTP(S) handlers are discovered through Launch Services. **Refresh bro
 
 Profile routes invoke the browser executable with `--profile-directory` and the URL as separate arguments, including when the browser is already running. No shell is involved. Custom user-data directories are not discovered. Safari, Firefox, Arc, and other browsers are offered as browser-level destinations only; their profile/space selection is not implemented. Browser-level routes use the browser's own current/default profile behavior.
 
-Settings save atomically to `~/Library/Application Support/BrowserRouter/config.json`. Browser history, cookies, and passwords are never read. If the configuration cannot be decoded, the app shows an error and preserves the file without overwriting it. Quit, repair or move the file, and relaunch to recover.
+Settings save atomically to `$XDG_CONFIG_HOME/browser-router/config.json` when `XDG_CONFIG_HOME` is an absolute path, otherwise `~/.config/browser-router/config.json`. Empty or relative XDG paths use the fallback. Browser history, cookies, and passwords are never read. If the configuration cannot be decoded, the app shows an error and preserves the file without overwriting it. Quit, repair or move the file, and relaunch to recover.
 
 ## Development
 

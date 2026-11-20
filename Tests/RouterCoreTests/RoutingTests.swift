@@ -79,21 +79,20 @@ func profileDiscovery() throws {
 
 func routingProfiles() throws {
     let url = URL(string: "https://example.com/work")!
-    let legacy = Configuration(fallback: safari, rules: [Rule(pattern: "example.com", destination: work)])
-    let data = try JSONEncoder().encode(legacy)
-    var settings = try JSONDecoder().decode(RoutingSettings.self, from: data)
+    let personal = Configuration(fallback: safari, rules: [Rule(pattern: "example.com", destination: work)])
+    var settings = RoutingSettings(configuration: personal)
     let personalID = settings.activeProfileID
     precondition(settings.profiles.count == 1)
-    precondition(settings.activeConfiguration == legacy)
+    precondition(settings.activeConfiguration == personal)
     settings.add(name: "Work")
     let workID = settings.activeProfileID
     precondition(settings.activeConfiguration.rules.isEmpty)
     settings.activeConfiguration = Configuration(fallback: work)
     precondition(settings.activeConfiguration.destination(for: url) == work)
     settings.activate(personalID)
-    precondition(settings.activeConfiguration == legacy)
+    precondition(settings.activeConfiguration == personal)
     settings.add(name: "Personal copy", duplicatingActive: true)
-    precondition(settings.activeConfiguration == legacy)
+    precondition(settings.activeConfiguration == personal)
     settings.activeConfiguration.rules.removeAll()
     settings.renameActive(to: "Copy")
     precondition(settings.activeProfile.name == "Copy")
@@ -119,10 +118,46 @@ func routingProfiles() throws {
     }
 }
 
+func configurationFiles() throws {
+    let files = FileManager.default
+    let home = files.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? files.removeItem(at: home) }
+    let fallback = ConfigurationFile(home: home, environment: [:])
+    precondition(fallback.url.path == home.appendingPathComponent(".config/browser-router/config.json").path)
+    for value in ["", "relative", "~/config"] {
+        precondition(ConfigurationFile(home: home, environment: ["XDG_CONFIG_HOME": value]).url == fallback.url)
+    }
+    let xdg = home.appendingPathComponent("custom-config")
+    let custom = ConfigurationFile(home: home, environment: ["XDG_CONFIG_HOME": xdg.path])
+    precondition(custom.url == xdg.appendingPathComponent("browser-router/config.json"))
+    let fresh = try custom.load()
+    precondition(fresh.profiles.count == 1)
+    precondition(!files.fileExists(atPath: custom.url.path))
+    var settings = RoutingSettings(configuration: Configuration(fallback: work))
+    settings.add(name: "Work", duplicatingActive: true)
+    try custom.save(settings)
+    let reloaded = try custom.load()
+    precondition(reloaded == settings)
+    settings.renameActive(to: "Renamed")
+    try custom.save(settings)
+    let updated = try custom.load()
+    precondition(updated == settings)
+    let invalid = Data("invalid configuration".utf8)
+    try invalid.write(to: custom.url)
+    do {
+        _ = try custom.load()
+        preconditionFailure("Invalid configuration must be rejected")
+    } catch is DecodingError { }
+    let preserved = try Data(contentsOf: custom.url)
+    precondition(preserved == invalid)
+
+}
+
 domainBoundaries()
 globIsAnchoredAndLiteral()
 try regularExpressions()
 try precedenceDisabledAndFallback()
 try profileDiscovery()
 try routingProfiles()
+try configurationFiles()
 print("All routing and profile checks passed.")

@@ -58,13 +58,6 @@ public struct RoutingSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        // Existing single-configuration files become the first profile without losing rules.
-        guard container.contains(.profiles) else {
-            let profile = RoutingProfile(name: "Personal", configuration: try Configuration(from: decoder))
-            profiles = [profile]
-            activeProfileID = profile.id
-            return
-        }
         let profiles = try container.decode([RoutingProfile].self, forKey: .profiles)
         let activeID = try container.decode(UUID.self, forKey: .activeProfileID)
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count,

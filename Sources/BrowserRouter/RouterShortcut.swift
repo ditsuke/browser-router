@@ -14,7 +14,7 @@ enum RouterShortcut: String, CaseIterable, Sendable {
         case .deleteProfile: "Delete Profile…"
         case .toggleOverrides: "Show / Hide Overrides"
         case .addOverride: "Add Override"
-        case .focusURL: "Focus Test URL"
+        case .focusURL: "Test URL…"
         case .openTestURL: "Open Test URL"
         case .refresh: "Refresh Browsers and Profiles"
         }

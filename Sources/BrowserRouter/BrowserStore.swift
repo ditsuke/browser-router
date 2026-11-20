@@ -23,25 +23,15 @@ final class BrowserStore: ObservableObject {
     @Published var isDefault = false
     @Published var overridesExpanded = false
     private var loaded = false
-    private let configURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/BrowserRouter/config.json")
+    private let configurationFile = ConfigurationFile()
 
     init() {
         do {
-            if FileManager.default.fileExists(atPath: configURL.path) {
-                let data = try Data(contentsOf: configURL)
-                settings = try JSONDecoder().decode(RoutingSettings.self, from: data)
-                if (try? JSONDecoder().decode(Configuration.self, from: data)) != nil {
-                    let backup = configURL.deletingLastPathComponent().appendingPathComponent("config.before-profiles.json")
-                    if !FileManager.default.fileExists(atPath: backup.path) {
-                        try data.write(to: backup, options: .atomic)
-                    }
-                }
-            }
+            settings = try configurationFile.load()
             loaded = true
         } catch {
             // Keep an unreadable configuration intact until the user explicitly fixes it.
-            self.error = "Could not load \(configURL.path): \(error.localizedDescription). Changes will not be saved."
+            self.error = "Could not load \(configurationFile.url.path): \(error.localizedDescription). Changes will not be saved."
         }
         refresh()
     }
@@ -69,10 +59,7 @@ final class BrowserStore: ObservableObject {
 
     private func save() {
         do {
-            try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(settings).write(to: configURL, options: .atomic)
+            try configurationFile.save(settings)
         } catch { self.error = "Could not save settings: \(error.localizedDescription)" }
     }
 
