@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import RouterCore
+import OSLog
 
 struct Browser: Identifiable {
     let id: String
@@ -21,9 +22,21 @@ final class BrowserStore: ObservableObject {
     }
     @Published var error: String?
     @Published var isDefault = false
+    @Published var isSettingDefault = false
     @Published var overridesExpanded = false
     private var loaded = false
     private let configurationFile = ConfigurationFile()
+    private let logger = Logger(subsystem: BrowserStore.routerID, category: "Operations")
+
+    private func report(_ failure: Error, operation: String) {
+        let failure = failure as NSError
+        var details = "\(operation): \(failure.localizedDescription) [\(failure.domain):\(failure.code)]"
+        if let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError {
+            details += " Cause: \(underlying.localizedDescription) [\(underlying.domain):\(underlying.code)]"
+        }
+        error = details
+        logger.error("\(details, privacy: .private)")
+    }
 
     init() {
         do {
@@ -51,8 +64,12 @@ final class BrowserStore: ObservableObject {
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String ?? url.deletingPathExtension().lastPathComponent,
                 url: url, profiles: profiles, chromium: profileRoot != nil)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        refreshDefaultStatus()
+    }
+
+    func refreshDefaultStatus() {
         isDefault = ["http", "https"].allSatisfy {
-            workspace.urlForApplication(toOpen: URL(string: "\($0)://example.com")!)
+            NSWorkspace.shared.urlForApplication(toOpen: URL(string: "\($0)://example.com")!)
                 .flatMap { Bundle(url: $0)?.bundleIdentifier } == Self.routerID
         }
     }
@@ -68,11 +85,26 @@ final class BrowserStore: ObservableObject {
             error = "Run the bundled .app built with scripts/build.sh first."
             return
         }
-        for scheme in ["http", "https"] {
-            NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpenURLsWithScheme: scheme) { [weak self] error in
-                Task { @MainActor in
-                    if let error { self?.error = error.localizedDescription }
-                    self?.refresh()
+        guard !isSettingDefault else { return }
+        error = nil
+        isSettingDefault = true
+        let appURL = Bundle.main.bundleURL.resolvingSymlinksInPath()
+        Task { @MainActor in
+            defer {
+                isSettingDefault = false
+                refresh()
+            }
+            for scheme in ["http", "https"] {
+                do {
+                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                        NSWorkspace.shared.setDefaultApplication(at: appURL, toOpenURLsWithScheme: scheme) { error in
+                            if let error { continuation.resume(throwing: error) }
+                            else { continuation.resume() }
+                        }
+                    }
+                } catch {
+                    report(error, operation: "Could not set \(appURL.path) as the default for \(scheme)")
+                    return
                 }
             }
         }
@@ -87,19 +119,22 @@ final class BrowserStore: ObservableObject {
     }
 
     func route(_ url: URL) {
-        guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
-            error = "Only HTTP and HTTPS links are supported."
+        let isHTMLFile = url.isFileURL && ["html", "htm", "xhtml", "xht", "shtml"].contains(url.pathExtension.lowercased())
+        guard isHTMLFile || ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            error = "Only HTTP(S) links and local HTML documents are supported."
             return
         }
-        let destination = config.destination(for: url)
+        error = nil
+        let destination = isHTMLFile ? config.fallback : config.destination(for: url)
         guard destination.bundleID != Self.routerID,
               let browser = browsers.first(where: { $0.id == destination.bundleID }) else {
             error = "Destination unavailable: \(destination.bundleID). Choose an installed browser in settings."
             return
         }
+        let appURL = browser.url.resolvingSymlinksInPath()
         if let profile = destination.profile {
             guard browser.chromium, browser.profiles.contains(where: { $0.id == profile }),
-                  let executable = Bundle(url: browser.url)?.executableURL else {
+                  let executable = Bundle(url: appURL)?.executableURL else {
                 error = "Profile unavailable for \(browser.name). Refresh browsers and choose a profile."
                 return
             }
@@ -116,10 +151,14 @@ final class BrowserStore: ObservableObject {
                 }
             }
             do { try process.run() }
-            catch { self.error = "Could not launch \(browser.name): \(error.localizedDescription)" }
+            catch { report(error, operation: "Could not launch \(browser.name) at \(appURL.path)") }
         } else {
-            NSWorkspace.shared.open([url], withApplicationAt: browser.url, configuration: .init()) { [weak self] _, error in
-                if let error { Task { @MainActor in self?.error = error.localizedDescription } }
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: .init()) { [weak self] _, error in
+                if let error {
+                    Task { @MainActor in
+                        self?.report(error, operation: "Could not open \(url.absoluteString) in \(browser.name) at \(appURL.path)")
+                    }
+                }
             }
         }
     }

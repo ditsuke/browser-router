@@ -153,6 +153,19 @@ func configurationFiles() throws {
 
 }
 
+func browserBundleDeclarations() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let data = try Data(contentsOf: root.appendingPathComponent("scripts/Info.plist"))
+    let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: Any]
+    let documents = plist["CFBundleDocumentTypes"] as? [[String: Any]] ?? []
+    let types = Set(documents.flatMap { $0["LSItemContentTypes"] as? [String] ?? [] })
+    precondition(types.isSuperset(of: ["public.html", "public.xhtml"]))
+    precondition(documents.allSatisfy { $0["CFBundleTypeRole"] as? String == "Viewer" })
+    let urlTypes = plist["CFBundleURLTypes"] as? [[String: Any]] ?? []
+    let schemes = Set(urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] })
+    precondition(schemes.isSuperset(of: ["http", "https"]))
+}
+
 domainBoundaries()
 globIsAnchoredAndLiteral()
 try regularExpressions()
@@ -160,4 +173,5 @@ try precedenceDisabledAndFallback()
 try profileDiscovery()
 try routingProfiles()
 try configurationFiles()
+try browserBundleDeclarations()
 print("All routing and profile checks passed.")

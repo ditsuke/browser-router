@@ -68,7 +68,7 @@ The **Shortcuts** menu in the router window lists commands with native shortcut 
 - **URL regex** searches the percent-encoded URL with Foundation regular expressions. Use `^` and `$` to anchor the match, or `(?i)` for case-insensitive matching. Example: `^https://(www\.)?example\.com/(work|admin)(/|$)`. Enter the expression directly without `/…/` delimiters. Invalid and empty expressions show an inline error and are skipped.
 - Use **Test URL** beside the default destination (⌘L) to open the tester popover. It previews the destination and matched override, or explains that the default applies. Return opens the link; Escape closes the popover.
 
-Only HTTP(S) links are handled. Browsers are opened explicitly, preventing default-browser recursion. Missing destinations produce a visible error rather than silently opening another profile. Links opened inside a browser generally stay there; Browser Router handles links sent to the system default browser.
+HTTP(S) links follow the active routing profile's overrides. Local HTML/XHTML documents use that profile's default destination. The app declares both web schemes and HTML document handling, which macOS requires to classify it as an eligible default browser. Browsers are opened explicitly, preventing default-browser recursion. Missing destinations produce a visible error rather than silently opening another profile. Links opened inside a browser generally stay there; Browser Router handles links sent to the system default browser.
 
 ## Browser and profile discovery
 

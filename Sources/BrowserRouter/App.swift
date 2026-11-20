@@ -99,6 +99,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         return true
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        store.refreshDefaultStatus()
+    }
+
     @objc func showSettings() {
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 720),
@@ -171,8 +175,8 @@ struct SettingsView: View {
                     }
                 }
                     .keyboardShortcut("r").help("Refresh browsers and profiles (⌘R)")
-                Button(store.isDefault ? "Default browser ✓" : "Make default browser") { store.makeDefault() }
-                    .disabled(store.isDefault)
+                Button(store.isSettingDefault ? "Setting default…" : (store.isDefault ? "Default browser ✓" : "Make default browser")) { store.makeDefault() }
+                    .disabled(store.isDefault || store.isSettingDefault)
             }
             ProfileSwitcher(store: store)
             GroupBox("Default destination") {
