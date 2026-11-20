@@ -22,10 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let handled = MainActor.assumeIsolated {
                 guard let self, let window = self.window, NSApp.keyWindow === window,
                       window.attachedSheet == nil,
-                      event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
-                      let key = event.charactersIgnoringModifiers, let number = Int(key),
-                      (1...9).contains(number), self.store.settings.profiles.indices.contains(number - 1) else { return false }
-                self.store.settings.activate(self.store.settings.profiles[number - 1].id)
+                      let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+                let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                if modifiers == .command, let number = Int(key), (1...9).contains(number),
+                   self.store.settings.profiles.indices.contains(number - 1) {
+                    self.store.settings.activate(self.store.settings.profiles[number - 1].id)
+                    return true
+                }
+                guard let action = RouterShortcut.allCases.first(where: {
+                    !$0.keyEquivalent.isEmpty && $0.keyEquivalent == key && $0.modifiers == modifiers
+                }) else { return false }
+                NotificationCenter.default.post(name: RouterShortcut.notification, object: action)
                 return true
             }
             return handled ? nil : event
@@ -35,17 +42,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(withTitle: "Routing profile", action: nil, keyEquivalent: "")
+        menu.autoenablesItems = false
+        menu.addItem(withTitle: "Routing profile", action: nil, keyEquivalent: "").isEnabled = false
         for (index, profile) in store.settings.profiles.enumerated() {
             let item = menu.addItem(withTitle: profile.name, action: #selector(selectProfile(_:)),
                                     keyEquivalent: index < 9 ? String(index + 1) : "")
             item.target = self
             item.representedObject = profile.id.uuidString
             item.state = profile.id == store.settings.activeProfileID ? .on : .off
+            item.isEnabled = window?.attachedSheet == nil
+        }
+        menu.addItem(.separator())
+        for action in RouterShortcut.allCases {
+            if action == .toggleOverrides || action == .focusURL || action == .refresh {
+                menu.addItem(.separator())
+            }
+            let title = action == .toggleOverrides ? (store.overridesExpanded ? "Hide Overrides" : "Show Overrides") : action.title
+            let item = menu.addItem(withTitle: title, action: #selector(performRouterCommand(_:)),
+                                    keyEquivalent: action.keyEquivalent)
+            item.keyEquivalentModifierMask = action.modifiers
+            item.target = self
+            item.representedObject = action.rawValue
+            item.isEnabled = window?.attachedSheet == nil && !(action == .deleteProfile && store.settings.profiles.count == 1)
+            if action == .openTestURL { item.toolTip = "Return opens the URL when the test field is focused." }
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    }
+
+    @objc private func performRouterCommand(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String,
+              let action = RouterShortcut(rawValue: value) else { return }
+        showSettings()
+        // Let a newly opened hosting view subscribe before delivering its command.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: RouterShortcut.notification, object: action)
+        }
     }
 
     @objc private func selectProfile(_ sender: NSMenuItem) {
@@ -77,6 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window, window.attachedSheet == nil else { return }
+            window.makeFirstResponder(nil)
+        }
     }
 }
 
@@ -103,7 +140,7 @@ struct DestinationPicker: View {
 struct SettingsView: View {
     @ObservedObject var store: BrowserStore
     @State private var testURL = "https://example.com"
-    @State private var overridesExpanded = false
+    @FocusState private var urlFocused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -112,7 +149,13 @@ struct SettingsView: View {
                     Text("Links go where you want.").foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Refresh browsers") { store.refresh() }
+                Button { store.refresh() } label: {
+                    HStack(spacing: 8) {
+                        Text("Refresh browsers")
+                        Text("⌘R").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+                    .keyboardShortcut("r").help("Refresh browsers and profiles (⌘R)")
                 Button(store.isDefault ? "Default browser ✓" : "Make default browser") { store.makeDefault() }
                     .disabled(store.isDefault)
             }
@@ -120,16 +163,16 @@ struct SettingsView: View {
             GroupBox("Default destination") {
                 DestinationPicker(store: store, selection: $store.config.fallback).padding(8)
             }
-            OverridesHeader(isExpanded: $overridesExpanded,
+            OverridesHeader(isExpanded: $store.overridesExpanded,
                             count: store.config.rules.count,
                             enabledCount: store.config.rules.filter(\.enabled).count)
-            if overridesExpanded {
+            if store.overridesExpanded {
                 HStack {
                     Text("First matching rule wins.").foregroundStyle(.secondary)
                     Spacer()
                     Button("Add rule", systemImage: "plus") {
-                        store.config.rules.append(Rule(destination: store.config.fallback))
-                    }
+                        addOverride()
+                    }.help("Add override (⇧⌘N)")
                 }
                 ScrollView {
                     VStack(spacing: 10) {
@@ -161,11 +204,15 @@ struct SettingsView: View {
                     }
                 }.id(store.settings.activeProfileID)
             }
-            if !overridesExpanded { Spacer(minLength: 0) }
+            if !store.overridesExpanded { Spacer(minLength: 0) }
             Divider()
             HStack {
                 TextField("Test an HTTP(S) URL", text: $testURL)
-                Button("Open") { if let url = URL(string: testURL) { store.route(url) } }
+                    .focused($urlFocused)
+                    .onSubmit { openTestURL() }
+                    .help("Test URL (⌘L); press Return to open")
+                Button("Open") { openTestURL() }
+                    .help("Open test URL (Return when the URL field is focused)")
             }
             if let url = URL(string: testURL), ["http", "https"].contains(url.scheme) {
                 Text("Routes to: \(store.label(for: store.config.destination(for: url)))").font(.caption).foregroundStyle(.secondary)
@@ -180,7 +227,31 @@ struct SettingsView: View {
                 }
             }
         }.padding(22).frame(minWidth: 720, minHeight: 650)
-            .onChange(of: store.settings.activeProfileID) { overridesExpanded = false }
+            .onChange(of: store.settings.activeProfileID) { store.overridesExpanded = false }
+            .onReceive(NotificationCenter.default.publisher(for: RouterShortcut.notification)) { notification in
+                guard let action = notification.object as? RouterShortcut else { return }
+                switch action {
+                case .toggleOverrides: store.overridesExpanded.toggle()
+                case .addOverride: addOverride()
+                case .focusURL: urlFocused = true
+                case .refresh: store.refresh()
+                case .openTestURL: openTestURL()
+                case .newProfile, .duplicateProfile, .renameProfile, .deleteProfile: break
+                }
+            }
+    }
+
+    private func addOverride() {
+        store.overridesExpanded = true
+        store.config.rules.append(Rule(destination: store.config.fallback))
+    }
+
+    private func openTestURL() {
+        guard let url = URL(string: testURL) else {
+            store.error = "Enter a valid HTTP(S) URL."
+            return
+        }
+        store.route(url)
     }
 
     private func move(_ id: UUID, by offset: Int) {

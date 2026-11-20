@@ -21,6 +21,7 @@ final class BrowserStore: ObservableObject {
     }
     @Published var error: String?
     @Published var isDefault = false
+    @Published var overridesExpanded = false
     private var loaded = false
     private let configURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/BrowserRouter/config.json")

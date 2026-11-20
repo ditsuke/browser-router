@@ -23,6 +23,24 @@ Use **Manage** to create, duplicate, rename, or delete a profile. New profiles s
 
 Existing settings become a **Personal** profile automatically. Before the app saves the new format, it preserves the original file as `config.before-profiles.json` next to `config.json`.
 
+### Keyboard shortcuts
+
+These work while the router window is focused. Profile dialogs keep their normal Return/Escape behavior.
+The **Shortcuts** menu in the router window lists commands with native shortcut labels. The macOS menu bar icon offers the same commands. Buttons show shortcut tooltips on hover; Refresh, profile cards, and the overrides header also show their shortcuts inline.
+
+| Shortcut | Action |
+| --- | --- |
+| ⌘1–⌘9 | Activate a routing profile |
+| ⌘N | Create a routing profile |
+| ⌘D | Duplicate the active routing profile |
+| ⌘O | Expand or collapse overrides |
+| ⇧⌘N | Add an override and expand the section |
+| ⌘L | Focus the test URL field |
+| Return in the test URL field | Open the test URL |
+| ⌘R | Refresh browsers and browser profiles |
+
+### Override rules
+
 - Choose a default destination, including a profile where supported.
 - Overrides start collapsed, showing configured and enabled rule counts for the active profile. Expand to add or edit rules and reorder them with the arrows. Switching profiles collapses the section again. The first enabled match wins.
 - **Domain** matches only `example.com`.

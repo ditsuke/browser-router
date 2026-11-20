@@ -6,6 +6,7 @@ struct ProfileSwitcher: View {
     @State private var editor: EditMode?
     @State private var name = ""
     @State private var confirmDelete = false
+    @FocusState private var nameFocused: Bool
 
     private enum EditMode: String, Identifiable {
         case create = "New profile", rename = "Rename profile", duplicate = "Duplicate profile"
@@ -25,9 +26,12 @@ struct ProfileSwitcher: View {
             HStack {
                 Text("Routing profiles").font(.headline)
                 Spacer()
+                ShortcutsMenu(store: store)
                 Menu {
                     Button("New profile…") { edit(.create) }
+                        .keyboardShortcut("n")
                     Button("Duplicate current profile…") { edit(.duplicate) }
+                        .keyboardShortcut("d")
                     Button("Rename current profile…") { edit(.rename) }
                     Divider()
                     Button("Delete current profile…", role: .destructive) { confirmDelete = true }
@@ -47,17 +51,26 @@ struct ProfileSwitcher: View {
                     }
                     Button { edit(.create) } label: {
                         Image(systemName: "plus").padding(16)
-                    }.buttonStyle(.plain).help("New routing profile")
+                    }.buttonStyle(.plain).help("New routing profile (⌘N)")
                         .accessibilityLabel("New routing profile")
                 }.padding(2)
             }
             Text("Active: \(store.settings.activeProfile.name). Changes below apply to this profile.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        .onReceive(NotificationCenter.default.publisher(for: RouterShortcut.notification)) { notification in
+            guard let action = notification.object as? RouterShortcut else { return }
+            if action == .newProfile { edit(.create) }
+            if action == .duplicateProfile { edit(.duplicate) }
+            if action == .renameProfile { edit(.rename) }
+            if action == .deleteProfile && store.settings.profiles.count > 1 { confirmDelete = true }
+        }
         .sheet(item: $editor) { mode in
             VStack(alignment: .leading, spacing: 16) {
                 Text(mode.rawValue).font(.headline)
                 TextField("Profile name", text: $name)
+                    .focused($nameFocused)
+                    .onAppear { nameFocused = true }
                     .onSubmit { if validName { save(mode) } }
                 if !cleanName.isEmpty && !validName {
                     Text("A profile with this name already exists.").font(.caption).foregroundStyle(.red)
@@ -93,6 +106,7 @@ struct ProfileSwitcher: View {
             .background(active ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(active ? Color.accentColor : Color.secondary.opacity(0.2)))
         }.buttonStyle(.plain)
+            .help(index < 9 ? "Activate \(profile.name) (⌘\(index + 1))" : "Activate \(profile.name)")
             .accessibilityLabel("\(profile.name)\(active ? ", active" : "")")
     }
 

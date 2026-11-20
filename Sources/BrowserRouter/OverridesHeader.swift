@@ -19,6 +19,10 @@ struct OverridesHeader: View {
                 Spacer(minLength: 16)
                 Text(isExpanded ? "Hide rules" : "Show rules")
                     .font(.subheadline).foregroundStyle(Color.accentColor)
+                Text("⌘O").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 4))
+                    .accessibilityHidden(true)
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.accentColor)
@@ -31,6 +35,7 @@ struct OverridesHeader: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help("Show or hide overrides (⌘O)")
         .onHover { isHovered = $0 }
         .accessibilityLabel("Overrides")
         .accessibilityValue("\(isExpanded ? "Expanded" : "Collapsed"), \(count) configured, \(enabledCount) enabled")
