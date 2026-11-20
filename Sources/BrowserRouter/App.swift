@@ -103,6 +103,7 @@ struct DestinationPicker: View {
 struct SettingsView: View {
     @ObservedObject var store: BrowserStore
     @State private var testURL = "https://example.com"
+    @State private var overridesExpanded = false
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
@@ -119,43 +120,48 @@ struct SettingsView: View {
             GroupBox("Default destination") {
                 DestinationPicker(store: store, selection: $store.config.fallback).padding(8)
             }
-            HStack {
-                Text("Overrides").font(.headline)
-                Text("First matching rule wins.").foregroundStyle(.secondary)
-                Spacer()
-                Button("Add rule", systemImage: "plus") {
-                    store.config.rules.append(Rule(destination: store.config.fallback))
+            OverridesHeader(isExpanded: $overridesExpanded,
+                            count: store.config.rules.count,
+                            enabledCount: store.config.rules.filter(\.enabled).count)
+            if overridesExpanded {
+                HStack {
+                    Text("First matching rule wins.").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Add rule", systemImage: "plus") {
+                        store.config.rules.append(Rule(destination: store.config.fallback))
+                    }
                 }
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach($store.config.rules) { $rule in
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Toggle("Enabled", isOn: $rule.enabled).labelsHidden()
+                                    Picker("Match", selection: $rule.kind) {
+                                        ForEach(MatchKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                                    }.labelsHidden().frame(width: 180)
+                                    TextField(patternPlaceholder(for: rule.kind), text: $rule.pattern)
+                                    Button { move(rule.id, by: -1) } label: { Image(systemName: "arrow.up") }.help("Move earlier")
+                                    Button { move(rule.id, by: 1) } label: { Image(systemName: "arrow.down") }.help("Move later")
+                                    Button(role: .destructive) { store.config.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
+                                }
+                                DestinationPicker(store: store, selection: $rule.destination)
+                                if let error = rule.validationError {
+                                    Text(error).font(.caption).foregroundStyle(.red)
+                                } else if rule.kind == .regex {
+                                    Text("Searches the URL. Use ^ and $ to anchor; (?i) for case-insensitive matching.")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+                        }
+                        if store.config.rules.isEmpty {
+                            Text("No overrides. All links use your default destination.")
+                                .foregroundStyle(.secondary).padding(25)
+                        }
+                    }
+                }.id(store.settings.activeProfileID)
             }
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach($store.config.rules) { $rule in
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Toggle("Enabled", isOn: $rule.enabled).labelsHidden()
-                                Picker("Match", selection: $rule.kind) {
-                                    ForEach(MatchKind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                                }.labelsHidden().frame(width: 180)
-                                TextField(patternPlaceholder(for: rule.kind), text: $rule.pattern)
-                                Button { move(rule.id, by: -1) } label: { Image(systemName: "arrow.up") }.help("Move earlier")
-                                Button { move(rule.id, by: 1) } label: { Image(systemName: "arrow.down") }.help("Move later")
-                                Button(role: .destructive) { store.config.rules.removeAll { $0.id == rule.id } } label: { Image(systemName: "trash") }
-                            }
-                            DestinationPicker(store: store, selection: $rule.destination)
-                            if let error = rule.validationError {
-                                Text(error).font(.caption).foregroundStyle(.red)
-                            } else if rule.kind == .regex {
-                                Text("Searches the URL. Use ^ and $ to anchor; (?i) for case-insensitive matching.")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.padding(10).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    if store.config.rules.isEmpty {
-                        Text("No overrides. All links use your default destination.")
-                            .foregroundStyle(.secondary).padding(25)
-                    }
-                }
-            }.id(store.settings.activeProfileID)
+            if !overridesExpanded { Spacer(minLength: 0) }
             Divider()
             HStack {
                 TextField("Test an HTTP(S) URL", text: $testURL)
@@ -174,6 +180,7 @@ struct SettingsView: View {
                 }
             }
         }.padding(22).frame(minWidth: 720, minHeight: 650)
+            .onChange(of: store.settings.activeProfileID) { overridesExpanded = false }
     }
 
     private func move(_ id: UUID, by offset: Int) {

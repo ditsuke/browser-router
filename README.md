@@ -24,7 +24,7 @@ Use **Manage** to create, duplicate, rename, or delete a profile. New profiles s
 Existing settings become a **Personal** profile automatically. Before the app saves the new format, it preserves the original file as `config.before-profiles.json` next to `config.json`.
 
 - Choose a default destination, including a profile where supported.
-- Add overrides and reorder them with the arrows. The first enabled match wins.
+- Overrides start collapsed, showing configured and enabled rule counts for the active profile. Expand to add or edit rules and reorder them with the arrows. Switching profiles collapses the section again. The first enabled match wins.
 - **Domain** matches only `example.com`.
 - **Domain + subdomains** matches `example.com` and `work.example.com`, never `notexample.com`.
 - **URL glob** matches the whole URL. `*` means any sequence of characters; everything else is literal and case sensitive. Matching uses the URL’s percent-encoded representation. Example: `https://github.com/my-org/*`.
