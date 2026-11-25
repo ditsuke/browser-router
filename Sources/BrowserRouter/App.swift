@@ -4,15 +4,58 @@ import RouterCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
-    let store = BrowserStore()
+    private lazy var store = BrowserStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
     private var receivedURL = false
     private var shortcutMonitor: Any?
     private var pendingNeutralFocus = false
+    private var instanceLock: SingleInstanceLock?
+    private var secondaryLaunch = false
+    private var primaryPID: pid_t?
+    private var pendingURLs: [URL] = []
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        do {
+            let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
+                                                    appropriateFor: nil, create: true)
+            let lock = try SingleInstanceLock(url: cache.appendingPathComponent("BrowserRouter/instance.lock"))
+            instanceLock = lock
+            // Also recognize an older app version that predates the instance lock.
+            let existing = NSRunningApplication.runningApplications(withBundleIdentifier: BrowserStore.routerID)
+                .first {
+                    guard $0.processIdentifier != getpid(), !$0.isTerminated else { return false }
+                    // Lock-aware contenders must defer to the lock winner, even
+                    // if they registered with macOS slightly earlier.
+                    return $0.bundleURL.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "BrowserRouterInstanceProtocol") as? Int } != 1
+                }
+            secondaryLaunch = !lock.acquired || existing != nil
+            primaryPID = existing?.processIdentifier ?? (lock.acquired ? nil : lock.ownerPID)
+        } catch {
+            launchFailure("Could not establish the Browser Router instance lock: \(error.localizedDescription)")
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !secondaryLaunch else {
+            Task { @MainActor in
+                // A simultaneous launch may have acquired the lock just before
+                // publishing its PID or registering with Launch Services.
+                for _ in 0..<40 {
+                    let pid = primaryPID ?? instanceLock?.ownerPID
+                    if let pid, let primary = NSRunningApplication(processIdentifier: pid),
+                       primary.bundleIdentifier == BrowserStore.routerID, let app = primary.bundleURL {
+                        forwardToPrimary(at: app.resolvingSymlinksInPath())
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                launchFailure("The running Browser Router could not be reached. Please try opening it again.")
+            }
+            return
+        }
         NSApp.setActivationPolicy(.accessory)
+        installMainMenu()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Browser Router")
         let menu = NSMenu()
@@ -39,6 +82,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return handled ? nil : event
         }
         if !receivedURL { showSettings() }
+    }
+
+    private func installMainMenu() {
+        // SwiftUI no longer supplies an application scene/menu. Keep standard
+        // editing shortcuts available through AppKit's responder chain.
+        let menu = NSMenu()
+        let application = NSMenu()
+        application.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        application.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appItem = NSMenuItem()
+        appItem.submenu = application
+        menu.addItem(appItem)
+        let edit = NSMenu(title: "Edit")
+        for (title, action, key) in [
+            ("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+            ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+            ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")
+        ] {
+            edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+        }
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        menu.addItem(editItem)
+        NSApp.mainMenu = menu
+    }
+
+    private func forwardToPrimary(at app: URL) {
+        let urls = pendingURLs
+        pendingURLs.removeAll()
+        let completion: @Sendable (NSRunningApplication?, Error?) -> Void = { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error {
+                    self.launchFailure("Could not hand this launch to the running Browser Router: \(error.localizedDescription)")
+                } else if !self.pendingURLs.isEmpty {
+                    self.forwardToPrimary(at: app)
+                } else {
+                    NSApp.terminate(nil)
+                }
+            }
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = false
+        if urls.isEmpty {
+            NSWorkspace.shared.openApplication(at: app, configuration: configuration, completionHandler: completion)
+        } else {
+            NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: configuration, completionHandler: completion)
+        }
+    }
+
+    private func launchFailure(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Browser Router could not start"
+        alert.informativeText = message
+        alert.runModal()
+        NSApp.terminate(nil)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -88,6 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard !secondaryLaunch else { pendingURLs.append(contentsOf: urls); return }
         receivedURL = true
         store.refresh()
         urls.forEach(store.route)
@@ -95,11 +195,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !secondaryLaunch else { return true }
         showSettings()
         return true
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard !secondaryLaunch else { return }
         store.refreshDefaultStatus()
     }
 
@@ -115,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             window.contentView = container
             window.initialFirstResponder = container
             window.delegate = self
+            window.isRestorable = false
             window.isReleasedWhenClosed = false
             window.center()
             self.window = window
@@ -270,7 +373,11 @@ struct SettingsView: View {
 }
 
 @main
-struct BrowserRouterApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    var body: some Scene { Settings { EmptyView() } }
+enum BrowserRouterMain {
+    @MainActor static func main() {
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        withExtendedLifetime(delegate) { application.run() }
+    }
 }

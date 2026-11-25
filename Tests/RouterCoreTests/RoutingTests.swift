@@ -164,6 +164,25 @@ func browserBundleDeclarations() throws {
     let urlTypes = plist["CFBundleURLTypes"] as? [[String: Any]] ?? []
     let schemes = Set(urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] })
     precondition(schemes.isSuperset(of: ["http", "https"]))
+    precondition(plist["BrowserRouterInstanceProtocol"] as? Int == 1)
+}
+
+func singleInstanceLocking() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("instance.lock")
+    var primary: SingleInstanceLock? = try SingleInstanceLock(url: url)
+    precondition(primary!.acquired)
+    let contender = try SingleInstanceLock(url: url)
+    precondition(!contender.acquired)
+    precondition(contender.ownerPID == ProcessInfo.processInfo.processIdentifier)
+    primary = nil
+    // A surviving lock file, and an open secondary descriptor, must not prevent
+    // another process from becoming primary after the owner exits.
+    let successor = try SingleInstanceLock(url: url)
+    precondition(successor.acquired)
+    precondition(successor.ownerPID == ProcessInfo.processInfo.processIdentifier)
+    withExtendedLifetime((contender, successor)) {}
 }
 
 domainBoundaries()
@@ -174,4 +193,5 @@ try profileDiscovery()
 try routingProfiles()
 try configurationFiles()
 try browserBundleDeclarations()
+try singleInstanceLocking()
 print("All routing and profile checks passed.")

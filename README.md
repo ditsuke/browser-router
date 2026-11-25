@@ -34,6 +34,8 @@ To include it in another flake, add this repository as an input and use `inputs.
 
 The menu bar branch icon opens settings. Closing the settings window leaves routing active. macOS launches the app when a web link is opened, so a login item is unnecessary. Quitting does not change the system's default browser; choose another browser in System Settings to stop using the router.
 
+The app owns one settings window and allows one Router process per user, including across development copies and Nix generations. Later launches forward their links or settings request to the running instance. A lock in `~/Library/Caches/BrowserRouter/instance.lock` is released automatically when the process exits; a leftover lock file does not block startup.
+
 ## Routing
 
 ### Routing profiles
