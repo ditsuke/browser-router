@@ -68,9 +68,11 @@ final class BrowserStore: ObservableObject {
     }
 
     func refreshDefaultStatus() {
+        let currentApp = Bundle.main.bundleURL.resolvingSymlinksInPath().standardizedFileURL.path
         isDefault = ["http", "https"].allSatisfy {
-            NSWorkspace.shared.urlForApplication(toOpen: URL(string: "\($0)://example.com")!)
-                .flatMap { Bundle(url: $0)?.bundleIdentifier } == Self.routerID
+            guard let app = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "\($0)://example.com")!),
+                  Bundle(url: app)?.bundleIdentifier == Self.routerID else { return false }
+            return app.resolvingSymlinksInPath().standardizedFileURL.path == currentApp
         }
     }
 

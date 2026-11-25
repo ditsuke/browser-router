@@ -12,7 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var pendingNeutralFocus = false
     private var instanceLock: SingleInstanceLock?
     private var secondaryLaunch = false
-    private var primaryPID: pid_t?
+    private var primaryReady = false
+    private var legacyApplications: [NSRunningApplication] = []
+    private var wantsSettings = false
     private var pendingURLs: [URL] = []
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -22,15 +24,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let lock = try SingleInstanceLock(url: cache.appendingPathComponent("BrowserRouter/instance.lock"))
             instanceLock = lock
             // Also recognize an older app version that predates the instance lock.
-            let existing = NSRunningApplication.runningApplications(withBundleIdentifier: BrowserStore.routerID)
-                .first {
+            let legacy = NSRunningApplication.runningApplications(withBundleIdentifier: BrowserStore.routerID)
+                .filter {
                     guard $0.processIdentifier != getpid(), !$0.isTerminated else { return false }
                     // Lock-aware contenders must defer to the lock winner, even
                     // if they registered with macOS slightly earlier.
                     return $0.bundleURL.flatMap { Bundle(url: $0)?.object(forInfoDictionaryKey: "BrowserRouterInstanceProtocol") as? Int } != 1
                 }
-            secondaryLaunch = !lock.acquired || existing != nil
-            primaryPID = existing?.processIdentifier ?? (lock.acquired ? nil : lock.ownerPID)
+            secondaryLaunch = !lock.acquired
+            if lock.acquired {
+                // A newer lock owner must not redirect the user back to the
+                // pre-fix app with its duplicate SwiftUI Settings scene.
+                legacyApplications = legacy
+                legacy.forEach { _ = $0.terminate() }
+            }
         } catch {
             launchFailure("Could not establish the Browser Router instance lock: \(error.localizedDescription)")
         }
@@ -42,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 // A simultaneous launch may have acquired the lock just before
                 // publishing its PID or registering with Launch Services.
                 for _ in 0..<40 {
-                    let pid = primaryPID ?? instanceLock?.ownerPID
+                    let pid = instanceLock?.ownerPID
                     if let pid, let primary = NSRunningApplication(processIdentifier: pid),
                        primary.bundleIdentifier == BrowserStore.routerID, let app = primary.bundleURL {
                         forwardToPrimary(at: app.resolvingSymlinksInPath())
@@ -54,6 +61,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             return
         }
+        if !legacyApplications.isEmpty {
+            Task { @MainActor in
+                for _ in 0..<40 {
+                    if legacyApplications.allSatisfy(\.isTerminated) {
+                        legacyApplications.removeAll()
+                        startPrimary()
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+                launchFailure("An older Browser Router is still running. Quit that copy and open this version again.")
+            }
+        } else {
+            startPrimary()
+        }
+    }
+
+    private func startPrimary() {
+        guard !primaryReady else { return }
+        primaryReady = true
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -94,7 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             return handled ? nil : event
         }
-        if !receivedURL { showSettings() }
+        let urls = pendingURLs
+        pendingURLs.removeAll()
+        if !urls.isEmpty { application(NSApp, open: urls) }
+        if wantsSettings || !receivedURL { showSettings() }
     }
 
     private func installMainMenu() {
@@ -213,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard !secondaryLaunch else { pendingURLs.append(contentsOf: urls); return }
+        guard primaryReady else { pendingURLs.append(contentsOf: urls); return }
         receivedURL = true
         store.refresh()
         urls.forEach(store.route)
@@ -221,13 +251,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard !secondaryLaunch else { return true }
+        guard primaryReady else { wantsSettings = true; return true }
         showSettings()
         return true
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard !secondaryLaunch else { return }
+        guard primaryReady else { return }
         store.refreshDefaultStatus()
     }
 
