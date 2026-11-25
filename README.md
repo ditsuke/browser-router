@@ -59,6 +59,8 @@ The **Shortcuts** menu in the router window lists commands with native shortcut 
 | ⌘L | Open the URL tester popover and focus its field |
 | Return in the test URL field | Open the test URL |
 | ⌘R | Refresh browsers and browser profiles |
+| ⌘W | Close settings; keep routing in the menu bar |
+| ⌘Q | Quit Browser Router |
 
 ### Override rules
 

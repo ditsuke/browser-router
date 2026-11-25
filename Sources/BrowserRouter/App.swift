@@ -64,10 +64,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         statusItem = item
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated {
-                guard let self, let window = self.window, NSApp.isActive, window.isVisible, NSApp.keyWindow != nil,
-                      window.attachedSheet == nil,
+                guard let self, NSApp.isActive,
                       let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
                 let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                // Accessory apps don't reliably receive main-menu equivalents.
+                // Handle these before the settings/sheet guards: Quit must also
+                // work with a profile dialog open or no visible settings window.
+                if modifiers == .command, key == "q" {
+                    NSApp.terminate(nil)
+                    return true
+                }
+                if modifiers == .command, key == "w", let window = self.window, window.isVisible {
+                    guard window.attachedSheet == nil else { return false }
+                    self.closeSettings(nil)
+                    return true
+                }
+                guard let window = self.window, window.isVisible, NSApp.keyWindow != nil,
+                      window.attachedSheet == nil else { return false }
                 if modifiers == .command, let number = Int(key), (1...9).contains(number),
                    self.store.settings.profiles.indices.contains(number - 1) {
                     self.store.settings.activate(self.store.settings.profiles[number - 1].id)
@@ -90,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let menu = NSMenu()
         let application = NSMenu()
         application.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        application.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        application.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q").target = NSApp
         let appItem = NSMenuItem()
         appItem.submenu = application
         menu.addItem(appItem)
@@ -105,7 +118,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editItem.submenu = edit
         menu.addItem(editItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close Settings Window", action: #selector(closeSettings(_:)), keyEquivalent: "w").target = self
+        let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        menu.addItem(windowItem)
         NSApp.mainMenu = menu
+    }
+
+    @objc func closeSettings(_ sender: Any?) {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return }
+        window.performClose(sender)
     }
 
     private func forwardToPrimary(at app: URL) {
@@ -168,7 +191,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Browser Router Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let close = menu.addItem(withTitle: "Close Settings Window", action: #selector(closeSettings(_:)), keyEquivalent: "w")
+        close.target = self
+        close.isEnabled = window?.isVisible == true && window?.attachedSheet == nil
+        menu.addItem(withTitle: "Quit Browser Router", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q").target = NSApp
     }
 
     @objc private func performRouterCommand(_ sender: NSMenuItem) {

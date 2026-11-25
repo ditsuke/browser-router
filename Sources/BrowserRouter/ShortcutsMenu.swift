@@ -29,6 +29,11 @@ struct ShortcutsMenu: View {
             }
             Divider()
             Text("Return in the test URL field opens the link")
+            Divider()
+            Button("Close Settings Window") {
+                NSApp.sendAction(#selector(AppDelegate.closeSettings(_:)), to: NSApp.delegate, from: nil)
+            }.keyboardShortcut("w")
+            Button("Quit Browser Router") { NSApp.terminate(nil) }.keyboardShortcut("q")
         } label: {
             Label("Shortcuts", systemImage: "keyboard")
         }
