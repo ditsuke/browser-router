@@ -185,6 +185,30 @@ func singleInstanceLocking() throws {
     withExtendedLifetime((contender, successor)) {}
 }
 
+func testerURLInput() {
+    let cases = [
+        "google.com": "https://google.com",
+        "  google.com/search?q=router#results \n": "https://google.com/search?q=router#results",
+        "http://google.com/path": "http://google.com/path",
+        "https://google.com/a%20b": "https://google.com/a%20b",
+        "//example.com/path": "https://example.com/path",
+        "localhost:8080/path": "https://localhost:8080/path",
+        "example.com:8443": "https://example.com:8443",
+        "[::1]:8080/test": "https://[::1]:8080/test"
+    ]
+    for (input, expected) in cases {
+        precondition(TestURLInput.parse(input)?.absoluteString == expected, input)
+    }
+    for invalid in ["", "  ", "not a domain", "/just/a/path", "https://", "http:example.com",
+                    "javascript:alert(1)", "mailto:user@example.com", "ftp://example.com", "file:///tmp/a.html",
+                    "user@example.com", "localhost:bad", "example.com:99999", "example.com\n/path"] {
+        precondition(TestURLInput.parse(invalid) == nil, invalid)
+    }
+    let url = TestURLInput.parse("google.com/work")!
+    let rule = Rule(pattern: "google.com", destination: work)
+    precondition(Configuration(fallback: safari, rules: [rule]).destination(for: url) == work)
+}
+
 domainBoundaries()
 globIsAnchoredAndLiteral()
 try regularExpressions()
@@ -194,4 +218,5 @@ try routingProfiles()
 try configurationFiles()
 try browserBundleDeclarations()
 try singleInstanceLocking()
+testerURLInput()
 print("All routing and profile checks passed.")

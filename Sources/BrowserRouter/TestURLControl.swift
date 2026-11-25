@@ -1,16 +1,14 @@
 import SwiftUI
+import RouterCore
 
 struct TestURLControl: View {
     @ObservedObject var store: BrowserStore
     let restoreWindowFocus: () -> Void
     @State private var isPresented = false
-    @State private var value = "https://example.com"
+    @State private var value = "example.com"
 
     private var url: URL? {
-        guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              let host = url.host, !host.isEmpty else { return nil }
-        return url
+        TestURLInput.parse(value)
     }
 
     var body: some View {
@@ -64,13 +62,15 @@ private struct URLTesterPopover: View {
                     .buttonStyle(.plain).help("Close URL tester")
                     .accessibilityLabel("Close URL tester")
             }
-            TextField("https://example.com", text: $value)
+            TextField("google.com or https://example.com", text: $value)
                 .textFieldStyle(.roundedBorder)
                 .focused($urlFocused)
                 .onSubmit { openURL() }
                 .accessibilityLabel("URL to test")
             if let url {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text(url.absoluteString).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(2).textSelection(.enabled)
                     Text(store.label(for: store.config.destination(for: url)))
                         .font(.headline).textSelection(.enabled)
                     if let rule = store.config.rules.first(where: { $0.matches(url) }) {
@@ -84,7 +84,7 @@ private struct URLTesterPopover: View {
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             } else {
-                Text("Enter a complete HTTP or HTTPS URL.")
+                Text("Enter a domain or HTTP(S) URL.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             HStack {
