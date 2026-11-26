@@ -95,7 +95,10 @@ struct ProfileSwitcher: View {
 
     private func profileButton(_ profile: RoutingProfile, index: Int) -> some View {
         let active = profile.id == store.settings.activeProfileID
-        return Button { store.settings.activate(profile.id) } label: {
+        return Button {
+            if active { edit(.edit) }
+            else { store.settings.activate(profile.id) }
+        } label: {
             HStack(spacing: 10) {
                 Image(systemName: ProfileIcons.symbol(for: profile.icon))
                     .foregroundStyle(active ? Color.accentColor : Color.secondary)
@@ -108,7 +111,7 @@ struct ProfileSwitcher: View {
             .background(active ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(active ? Color.accentColor : Color.secondary.opacity(0.2)))
         }.buttonStyle(.plain)
-            .help(index < 9 ? "Activate \(profile.name) (⌘\(index + 1))" : "Activate \(profile.name)")
+            .help(active ? "Edit \(profile.name)" : (index < 9 ? "Activate \(profile.name) (⌘\(index + 1))" : "Activate \(profile.name)"))
             .accessibilityLabel("\(profile.name)\(active ? ", active" : "")")
     }
 
