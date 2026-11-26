@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import RouterCore
 
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private lazy var store = BrowserStore()
     private var window: NSWindow?
     private var statusItem: NSStatusItem?
+    private var statusProfileObservation: AnyCancellable?
     private var receivedURL = false
     private var shortcutMonitor: Any?
     private var pendingNeutralFocus = false
@@ -83,12 +85,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         primaryReady = true
         NSApp.setActivationPolicy(.accessory)
         installMainMenu()
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Browser Router")
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
         statusItem = item
+        statusProfileObservation = store.$settings.map(\.activeProfile)
+            .removeDuplicates { $0.name == $1.name && $0.icon == $1.icon }
+            .sink { [weak self] profile in
+                guard let button = self?.statusItem?.button else { return }
+                let title = "Browser Router — \(profile.name)"
+                button.image = ProfileIcons.statusImage(for: profile.icon, description: title)
+                button.toolTip = title
+                button.setAccessibilityLabel(title)
+            }
         shortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated {
                 guard let self, NSApp.isActive,
@@ -202,6 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                                     keyEquivalent: index < 9 ? String(index + 1) : "")
             item.target = self
             item.representedObject = profile.id.uuidString
+            item.image = ProfileIcons.menuImage(for: profile.icon, description: "", size: 13)
             item.state = profile.id == store.settings.activeProfileID ? .on : .off
             item.isEnabled = window?.attachedSheet == nil
         }
@@ -403,7 +414,7 @@ struct SettingsView: View {
                 case .toggleOverrides: store.overridesExpanded.toggle()
                 case .addOverride: addOverride()
                 case .refresh: store.refresh()
-                case .newProfile, .duplicateProfile, .renameProfile, .deleteProfile, .focusURL, .openTestURL: break
+                case .newProfile, .duplicateProfile, .editProfile, .deleteProfile, .focusURL, .openTestURL: break
                 }
             }
     }

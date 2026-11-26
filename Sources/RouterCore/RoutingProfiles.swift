@@ -4,11 +4,13 @@ public struct RoutingProfile: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
     public var name: String
     public var configuration: Configuration
+    public var icon: String?
 
-    public init(id: UUID = UUID(), name: String, configuration: Configuration = Configuration()) {
+    public init(id: UUID = UUID(), name: String, configuration: Configuration = Configuration(), icon: String? = nil) {
         self.id = id
         self.name = name
         self.configuration = configuration
+        self.icon = icon
     }
 }
 
@@ -38,14 +40,24 @@ public struct RoutingSettings: Codable, Equatable, Sendable {
     }
 
     public mutating func add(name: String, duplicatingActive: Bool = false) {
-        let profile = RoutingProfile(name: name, configuration: duplicatingActive ? activeConfiguration : Configuration())
+        add(name: name, icon: duplicatingActive ? activeProfile.icon : nil, duplicatingActive: duplicatingActive)
+    }
+
+    public mutating func add(name: String, icon: String?, duplicatingActive: Bool = false) {
+        let profile = RoutingProfile(name: name, configuration: duplicatingActive ? activeConfiguration : Configuration(),
+                                     icon: icon)
         profiles.append(profile)
         activeProfileID = profile.id
     }
 
     public mutating func renameActive(to name: String) {
+        updateActive(name: name, icon: activeProfile.icon)
+    }
+
+    public mutating func updateActive(name: String, icon: String?) {
         guard let index = profiles.firstIndex(where: { $0.id == activeProfileID }) else { return }
         profiles[index].name = name
+        profiles[index].icon = icon
     }
 
     public mutating func deleteActive() {

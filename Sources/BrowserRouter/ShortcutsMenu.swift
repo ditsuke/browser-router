@@ -1,4 +1,5 @@
 import SwiftUI
+import RouterCore
 
 struct ShortcutsMenu: View {
     @ObservedObject var store: BrowserStore
@@ -20,10 +21,10 @@ struct ShortcutsMenu: View {
             Menu("Switch routing profile") {
                 ForEach(Array(store.settings.profiles.enumerated()), id: \.element.id) { index, profile in
                     if index < 9 {
-                        Button(profile.name) { store.settings.activate(profile.id) }
+                        profileButton(profile)
                             .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
                     } else {
-                        Button(profile.name) { store.settings.activate(profile.id) }
+                        profileButton(profile)
                     }
                 }
             }
@@ -39,6 +40,12 @@ struct ShortcutsMenu: View {
         }
         .fixedSize()
         .help("Browse commands and keyboard shortcuts")
+    }
+
+    private func profileButton(_ profile: RoutingProfile) -> some View {
+        Button { store.settings.activate(profile.id) } label: {
+            Label(profile.name, systemImage: ProfileIcons.symbol(for: profile.icon))
+        }
     }
 
     private func commandButton(_ action: RouterShortcut) -> some View {

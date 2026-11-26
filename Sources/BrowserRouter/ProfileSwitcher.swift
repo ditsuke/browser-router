@@ -5,11 +5,12 @@ struct ProfileSwitcher: View {
     @ObservedObject var store: BrowserStore
     @State private var editor: EditMode?
     @State private var name = ""
+    @State private var icon: String?
     @State private var confirmDelete = false
     @FocusState private var nameFocused: Bool
 
     private enum EditMode: String, Identifiable {
-        case create = "New profile", rename = "Rename profile", duplicate = "Duplicate profile"
+        case create = "New profile", edit = "Edit profile", duplicate = "Duplicate profile"
         var id: String { rawValue }
     }
 
@@ -17,7 +18,7 @@ struct ProfileSwitcher: View {
     private var validName: Bool {
         !cleanName.isEmpty && !store.settings.profiles.contains {
             $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
-                && !(editor == .rename && $0.id == store.settings.activeProfileID)
+                && !(editor == .edit && $0.id == store.settings.activeProfileID)
         }
     }
 
@@ -32,7 +33,7 @@ struct ProfileSwitcher: View {
                         .keyboardShortcut("n")
                     Button("Duplicate current profile…") { edit(.duplicate) }
                         .keyboardShortcut("d")
-                    Button("Rename current profile…") { edit(.rename) }
+                    Button("Edit current profile…") { edit(.edit) }
                     Divider()
                     Button("Delete current profile…", role: .destructive) { confirmDelete = true }
                         .disabled(store.settings.profiles.count == 1)
@@ -62,7 +63,7 @@ struct ProfileSwitcher: View {
             guard let action = notification.object as? RouterShortcut else { return }
             if action == .newProfile { edit(.create) }
             if action == .duplicateProfile { edit(.duplicate) }
-            if action == .renameProfile { edit(.rename) }
+            if action == .editProfile { edit(.edit) }
             if action == .deleteProfile && store.settings.profiles.count > 1 { confirmDelete = true }
         }
         .sheet(item: $editor) { mode in
@@ -75,13 +76,14 @@ struct ProfileSwitcher: View {
                 if !cleanName.isEmpty && !validName {
                     Text("A profile with this name already exists.").font(.caption).foregroundStyle(.red)
                 }
+                ProfileIconPicker(selection: $icon)
                 HStack {
                     Spacer()
                     Button("Cancel") { editor = nil }.keyboardShortcut(.cancelAction)
-                    Button(mode == .rename ? "Save" : "Create") { save(mode) }
+                    Button(mode == .edit ? "Save" : "Create") { save(mode) }
                         .keyboardShortcut(.defaultAction).disabled(!validName)
                 }
-            }.padding(24).frame(width: 360)
+            }.padding(24).frame(width: 400)
         }
         .alert("Delete “\(store.settings.activeProfile.name)”?", isPresented: $confirmDelete) {
             Button("Cancel", role: .cancel) {}
@@ -95,7 +97,7 @@ struct ProfileSwitcher: View {
         let active = profile.id == store.settings.activeProfileID
         return Button { store.settings.activate(profile.id) } label: {
             HStack(spacing: 10) {
-                Image(systemName: active ? "checkmark.circle.fill" : "circle")
+                Image(systemName: ProfileIcons.symbol(for: profile.icon))
                     .foregroundStyle(active ? Color.accentColor : Color.secondary)
                 Text(profile.name).fontWeight(active ? .semibold : .regular).lineLimit(1)
                 if index < 9 {
@@ -111,14 +113,15 @@ struct ProfileSwitcher: View {
     }
 
     private func edit(_ mode: EditMode) {
-        name = mode == .rename ? store.settings.activeProfile.name : ""
+        name = mode == .edit ? store.settings.activeProfile.name : ""
+        icon = mode == .create ? nil : store.settings.activeProfile.icon
         editor = mode
     }
 
     private func save(_ mode: EditMode) {
         guard validName else { return }
-        if mode == .rename { store.settings.renameActive(to: cleanName) }
-        else { store.settings.add(name: cleanName, duplicatingActive: mode == .duplicate) }
+        if mode == .edit { store.settings.updateActive(name: cleanName, icon: icon) }
+        else { store.settings.add(name: cleanName, icon: icon, duplicatingActive: mode == .duplicate) }
         editor = nil
     }
 }

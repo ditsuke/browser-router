@@ -1,7 +1,7 @@
 import AppKit
 
 enum RouterShortcut: String, CaseIterable, Sendable {
-    case newProfile, duplicateProfile, renameProfile, deleteProfile
+    case newProfile, duplicateProfile, editProfile, deleteProfile
     case toggleOverrides, addOverride, focusURL, openTestURL, refresh
 
     static let notification = Notification.Name("BrowserRouter.shortcut")
@@ -10,7 +10,7 @@ enum RouterShortcut: String, CaseIterable, Sendable {
         switch self {
         case .newProfile: "New Profile…"
         case .duplicateProfile: "Duplicate Profile…"
-        case .renameProfile: "Rename Profile…"
+        case .editProfile: "Edit Profile…"
         case .deleteProfile: "Delete Profile…"
         case .toggleOverrides: "Show / Hide Overrides"
         case .addOverride: "Add Override"
@@ -27,7 +27,7 @@ enum RouterShortcut: String, CaseIterable, Sendable {
         case .toggleOverrides: "o"
         case .focusURL: "l"
         case .refresh: "r"
-        case .renameProfile, .deleteProfile, .openTestURL: ""
+        case .editProfile, .deleteProfile, .openTestURL: ""
         }
     }
 
